@@ -1,0 +1,7 @@
+pandas
+scikit-learn
+joblib
+anthropic>=1.2
+
+# tests
+pytest

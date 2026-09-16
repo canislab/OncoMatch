@@ -1,2 +1,112 @@
-# OncoMatch
-A system for deriving and identiying trainable trends in plain language clinical text notes from data pulled from the TCGA. This work was done as part of a project with CUMC oncologists, and was used to improve patient matching to ongoing experimental oncology trials.
+# Structured Feature Extraction from Pathology Reports
+
+Extracts seven structured oncology features — `sex`, `cancer_type`,
+`treatment`, `tumor`, `tumor_location`, `metastasis`, `metastatic_site` — from
+the free text of TCGA pathology reports, as groundwork for matching patients
+to clinical trials. Two independent lanes solve the same task, so their
+results are directly comparable:
+
+1. **Classical baseline** (`src/train.py`, `src/predict.py`) — one
+   TF-IDF + RandomForest pipeline per feature. Cheap, offline, fully
+   reproducible.
+2. **LLM extraction** (`src/llm_extract.py`, `src/llm_eval.py`) — Claude
+   reads the report and returns all seven features as schema-validated JSON
+   in one call. No training; the human annotations serve as the evaluation
+   set instead.
+
+The dataset (267 TCGA reports hand-annotated by a six-person team) is not
+redistributed here — see [data/README.md](data/README.md) for why, for the
+schema, and for the bundled synthetic demo set that keeps everything runnable
+out of the box.
+
+## Quickstart
+
+```bash
+pip install -r requirements.txt
+python -m pytest tests/ -q                # no network or API key needed
+
+# end-to-end on the synthetic demo set
+python src/train.py --data data/sample_annotations.csv --test-size 0.34
+python src/predict.py --text "Left breast segmental mastectomy ..."
+
+# LLM lane (requires ANTHROPIC_API_KEY)
+python src/llm_extract.py --file report.txt
+python src/llm_eval.py --limit 3          # smoke test, then drop --limit
+```
+
+## Results (classical baseline, real dataset)
+
+Held-out split of 54 reports; the majority-class baseline is the score a
+model must beat to be adding anything:
+
+| feature | classes | majority baseline | accuracy | weighted F1 |
+|---|---|---|---|---|
+| sex | 3 | 0.667 | **0.815** | 0.790 |
+| cancer_type | 31 | 0.130 | **0.722** | 0.648 |
+| treatment | 4 | 0.722 | 0.685 | 0.688 |
+| tumor | 2 | 0.926 | 0.926 | 0.890 |
+| tumor_location | 41 | 0.111 | **0.722** | 0.654 |
+| metastasis | 4 | 0.722 | 0.741 | 0.670 |
+| metastatic_site | 20 | 0.759 | 0.759 | 0.655 |
+
+Honest read: the high-cardinality, text-driven features (`cancer_type`,
+`tumor_location`) clear their baselines decisively; `treatment`, `tumor`, and
+`metastatic_site` do not beat majority guessing at this data size — which is
+exactly the gap the LLM lane targets. `src/llm_eval.py` replays this same
+split (same seed) and prints its scores next to these, so the comparison is
+apples to apples.
+
+## Design notes
+
+- **One task per feature.** The seven features are seven classification
+  problems sharing one split; conflating them into a single label space (as
+  an earlier iteration of this project did) makes the outputs meaningless.
+- **Baselines reported everywhere.** A 0.93 accuracy on `tumor` is worthless
+  next to a 0.93 majority class; every score in this repo ships with the
+  number it must beat.
+- **Schema-validated LLM output.** `llm_extract.py` uses structured outputs
+  (a Pydantic schema enforced by the API), so malformed extractions are
+  impossible rather than merely unlikely, and a test pins the schema to the
+  exact seven features.
+- **No label leakage.** The LLM eval passes the *training* split's label
+  vocabulary to the model as an annotation codebook (so it answers in TCGA
+  study codes like `stad`, not free-text histology names); held-out labels
+  are never shown to it.
+- **Cost awareness.** The shared system prompt is prompt-cached across an
+  eval run; token usage and estimated cost are recorded in the eval output.
+- **Provenance.** This grew out of exploratory Doc2Vec/LSTM work (2023) and
+  was rebuilt in 2026: TF-IDF replaced from-scratch Doc2Vec embeddings, which
+  cannot work well on ~270 documents and whose dependency (gensim) no longer
+  installs on current Python.
+
+## Repository layout
+
+```
+src/
+  train.py         per-feature TF-IDF + RandomForest training + evaluation
+  predict.py       report text -> feature JSON with confidences (offline)
+  llm_extract.py   report text -> schema-validated feature JSON via Claude
+  llm_eval.py      LLM lane scored against annotations, next to the baseline
+tests/             unit + round-trip tests (self-contained, no network)
+data/              schema docs + synthetic demo set (real data not included)
+.github/workflows/ CI: tests + end-to-end demo run
+```
+
+## Roadmap
+
+- Regenerate the consolidated dataset from the raw annotation sheets
+  (recovers ~50 additional annotated reports lost to a consolidation error).
+- Inter-annotator agreement on the validation sheets, to establish the
+  ceiling any model can hit.
+- The trial-matching layer: map extracted features onto ClinicalTrials.gov
+  eligibility criteria.
+
+## Acknowledgments
+
+Results here are based upon data generated by the
+[TCGA Research Network](https://www.cancer.gov/tcga). Feature annotations
+were created by a six-person volunteer team.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
