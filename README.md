@@ -37,7 +37,7 @@ python src/llm_eval.py --limit 3          # smoke test, then drop --limit
 ## Results (classical baseline, real dataset)
 
 Held-out split of 54 reports; the majority-class baseline is the score a
-model must beat to be adding anything:
+model must beat:
 
 | feature | classes | majority baseline | accuracy | weighted F1 |
 |---|---|---|---|---|
@@ -49,12 +49,11 @@ model must beat to be adding anything:
 | metastasis | 4 | 0.722 | 0.741 | 0.670 |
 | metastatic_site | 20 | 0.759 | 0.759 | 0.655 |
 
-Honest read: the high-cardinality, text-driven features (`cancer_type`,
+The high-cardinality, text-driven features (`cancer_type`,
 `tumor_location`) clear their baselines decisively; `treatment`, `tumor`, and
 `metastatic_site` do not beat majority guessing at this data size — which is
-exactly the gap the LLM lane targets. `src/llm_eval.py` replays this same
-split (same seed) and prints its scores next to these, so the comparison is
-apples to apples.
+exactly the gap the LLM approach targets. `src/llm_eval.py` uses this same
+split (same seed) and prints its scores next to these for direct comparison.
 
 ## Design notes
 
